@@ -1,13 +1,13 @@
 import { HttpAgent, Actor } from "@dfinity/agent";
-import { idlFactory as marketPlaceIDL } from "../../../declarations/dfinity_js_backend/dfinity_js_backend.did.js";
+import { idlFactory as bankIDL } from "../../../declarations/dfinity_js_backend/dfinity_js_backend.did.js";
 import { idlFactory as ledgerIDL } from "../../../declarations/ledger_canister/ledger_canister.did.js";
 
-const MARKETPLACE_CANISTER_ID = "be2us-64aaa-aaaaa-qaabq-cai";
+const BANK_CANISTER_ID = "be2us-64aaa-aaaaa-qaabq-cai";
 const LEDGER_CANISTER_ID = "ryjl3-tyaaa-aaaaa-aaaba-cai";
 const HOST = "http://localhost:4943";
 
-export async function getMarketplaceCanister() {
-    return await getCanister(MARKETPLACE_CANISTER_ID, marketPlaceIDL);
+export async function getBankCanister() {
+    return await getCanister(BANK_CANISTER_ID, bankIDL);
 }
 
 export async function getLedgerCanister() {

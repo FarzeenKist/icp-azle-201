@@ -1,7 +1,7 @@
 import React from "react";
 import { Dropdown, Stack } from "react-bootstrap";
 
-const Wallet = ({ principal, balance, symbol, isAuthenticated, destroy }) => {
+const Wallet = ({ principal, balance, approveBalance, symbol, isAuthenticated, destroy }) => {
   if (isAuthenticated) {
     return (
       <>
@@ -12,7 +12,7 @@ const Wallet = ({ principal, balance, symbol, isAuthenticated, destroy }) => {
             id="dropdown-basic"
             className="d-flex align-items-center border rounded-pill py-1"
           >
-            {balance} <span className="ms-1"> {symbol}</span>
+            View Account
           </Dropdown.Toggle>
 
           <Dropdown.Menu className="shadow-lg border-0">
@@ -20,6 +20,20 @@ const Wallet = ({ principal, balance, symbol, isAuthenticated, destroy }) => {
               <Stack direction="horizontal" gap={2}>
                 <i className="bi bi-person-circle fs-4" />
                 <span className="font-monospace">{principal}</span>
+              </Stack>
+            </Dropdown.Item>
+
+            <Dropdown.Divider />
+            <Dropdown.Item>
+              <Stack direction="horizontal" gap={2}>
+                Balance: {balance} <span className="ms-1"> {symbol}</span>
+              </Stack>
+            </Dropdown.Item>
+
+            <Dropdown.Divider />
+            <Dropdown.Item>
+              <Stack direction="horizontal" gap={2}>
+                Approved: {approveBalance} <span className="ms-1"> {symbol}</span>
               </Stack>
             </Dropdown.Item>
 

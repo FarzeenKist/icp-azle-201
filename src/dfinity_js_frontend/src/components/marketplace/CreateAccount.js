@@ -1,9 +1,6 @@
 import React from "react";
-import PropTypes from "prop-types";
 import { Button } from "react-bootstrap";
-
-const Cover = ({ title, login }) => {
-  if ((title, login)) {
+const CreateAccount = ({name, createAccount}) => {
     return (
       <div
         className="d-flex justify-content-center flex-column text-center "
@@ -15,29 +12,20 @@ const Cover = ({ title, login }) => {
             style={{ maxWidth: "320px" }}
           >
           </div>
-          <h1>Welcome to {title}</h1>
-          <p>Please connect your wallet to continue.</p>
+          <h1>Welcome to {name}</h1>
+          <p>Please register to continue.</p>
           <Button
-            onClick={login}
+            onClick={createAccount}
             variant="outline-light"
             className="rounded-pill px-3 mt-3"
           >
-            Connect Wallet
+            Create Account
           </Button>
         </div>
         <p className="mt-auto text-secondary">Powered by Internet Computer</p>
       </div>
     );
-  }
-  return null;
 };
 
-Cover.propTypes = {
-  title: PropTypes.string,
-};
 
-Cover.defaultProps = {
-  title: "",
-};
-
-export default Cover;
+export default CreateAccount;

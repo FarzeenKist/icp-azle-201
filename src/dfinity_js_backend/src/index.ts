@@ -1,278 +1,351 @@
-import { query, update, text, Record, StableBTreeMap, Variant, Vec, None, Some, Ok, Err, ic, Principal, Opt, nat64, Duration, Result, bool, Canister } from "azle";
 import {
-    Ledger, binaryAddressFromAddress, binaryAddressFromPrincipal, hexAddressFromPrincipal
-} from "azle/canisters/ledger";
-import { hashCode } from "hashcode";
+  query,
+  update,
+  text,
+  Record,
+  StableBTreeMap,
+  Variant,
+  Vec,
+  None,
+  Some,
+  Ok,
+  Err,
+  ic,
+  Principal,
+  Opt,
+  nat64,
+  Result,
+  bool,
+  Canister,
+  Duration,
+  nat,
+} from "azle";
+import {
+  Account,
+  ICRC,
+  TransferFromArgs,
+  AllowanceResult,
+  TransferFromResult
+} from "azle/canisters/icrc";
+import {hexAddressFromPrincipal } from "azle/canisters/ledger";
+//@ts-ignore
 import { v4 as uuidv4 } from "uuid";
-
-/**
- * This type represents a product that can be listed on a marketplace.
- * It contains basic properties that are needed to define a product.
- */
-const Product = Record({
-    id: text,
-    title: text,
-    description: text,
-    location: text,
-    price: nat64,
-    seller: Principal,
-    attachmentURL: text,
-    soldAmount: nat64
+const TransactionType = Variant({
+  approvedRequests: text,
+  transfer: text,
 });
 
-const ProductPayload = Record({
-    title: text,
-    description: text,
-    location: text,
-    price: nat64,
-    attachmentURL: text
+const Transaction = Record({
+  id: text,
+  transactionType: TransactionType,
+  amount: nat,
+  spender: Opt(Principal),
+  from: Opt(Principal),
+  to: Opt(Principal),
 });
-
-const OrderStatus = Variant({
-    PaymentPending: text,
-    Completed: text
+const Request = Record({
+  id: text,
+  requester: Principal,
+  receiver: Principal,
+  amount: nat,
+  approved: Opt(bool),
+  transactionId: Opt(text),
 });
-
-const Order = Record({
-    productId: text,
-    price: nat64,
-    status: OrderStatus,
-    seller: Principal,
-    paid_at_block: Opt(nat64),
-    memo: nat64
+const AccountData = Record({
+  owner: Principal,
+  transactions: Vec(Transaction),
+  transferRequests: Vec(text),
+});
+const RequestPayload = Record({
+  receiver: Principal,
+  amount: nat,
 });
 
 const Message = Variant({
-    NotFound: text,
-    InvalidPayload: text,
-    PaymentFailed: text,
-    PaymentCompleted: text
+  NotFound: text,
+  NotOwner: text,
+  InvalidPayload: text,
+  ApproveRequestFailed: text,
+  AlreadyRegistered: text,
+  TransferFromFailed: text,
 });
 
-/**
- * `productsStorage` - it's a key-value datastructure that is used to store products by sellers.
- * {@link StableBTreeMap} is a self-balancing tree that acts as a durable data storage that keeps data across canister upgrades.
- * For the sake of this contract we've chosen {@link StableBTreeMap} as a storage for the next reasons:
- * - `insert`, `get` and `remove` operations have a constant time complexity - O(1)
- * - data stored in the map survives canister upgrades unlike using HashMap where data is stored in the heap and it's lost after the canister is upgraded
- * 
- * Brakedown of the `StableBTreeMap(text, Product)` datastructure:
- * - the key of map is a `productId`
- * - the value in this map is a product itself `Product` that is related to a given key (`productId`)
- * 
- * Constructor values:
- * 1) 0 - memory id where to initialize a map
- * 2) 16 - it's a max size of the key in bytes.
- * 3) 1024 - it's a max size of the value in bytes. 
- * 2 and 3 are not being used directly in the constructor but the Azle compiler utilizes these values during compile time
- */
-const productsStorage = StableBTreeMap(0, text, Product);
-const persistedOrders = StableBTreeMap(1, Principal, Order);
-const pendingOrders = StableBTreeMap(2, nat64, Order);
+const accountsStorage = StableBTreeMap(0, Principal, AccountData);
+const requestsStorage = StableBTreeMap(1, text, Request);
 
-const ORDER_RESERVATION_PERIOD = 120n; // reservation period in seconds
+let icrc: typeof ICRC = ICRC(Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
 
-/* 
-    initialization of the Ledger canister. The principal text value is hardcoded because 
-    we set it in the `dfx.json`
-*/
-const icpCanister = Ledger(Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+const REQUEST_VALIDITY_PERIOD = 120n; // in seconds
 
 export default Canister({
-    getProducts: query([], Vec(Product), () => {
-        return productsStorage.values();
-    }),
-    getOrders: query([], Vec(Order), () => {
-        return persistedOrders.values();
-    }),
-    getPendingOrders: query([], Vec(Order), () => {
-        return pendingOrders.values();
-    }),
-    getProduct: query([text], Result(Product, Message), (id) => {
-        const productOpt = productsStorage.get(id);
-        if ("None" in productOpt) {
-            return Err({ NotFound: `product with id=${id} not found` });
-        }
-        return Ok(productOpt.Some);
-    }),
-    addProduct: update([ProductPayload], Result(Product, Message), (payload) => {
-        if (typeof payload !== "object" || Object.keys(payload).length === 0) {
-            return Err({ NotFound: "invalid payoad" })
-        }
-        const product = { id: uuidv4(), soldAmount: 0n, seller: ic.caller(), ...payload };
-        productsStorage.insert(product.id, product);
-        return Ok(product);
-    }),
-
-    updateProduct: update([Product], Result(Product, Message), (payload) => {
-        const productOpt = productsStorage.get(payload.id);
-        if ("None" in productOpt) {
-            return Err({ NotFound: `cannot update the product: product with id=${payload.id} not found` });
-        }
-        productsStorage.insert(productOpt.Some.id, payload);
-        return Ok(payload);
-    }),
-    deleteProduct: update([text], Result(text, Message), (id) => {
-        const deletedProductOpt = productsStorage.remove(id);
-        if ("None" in deletedProductOpt) {
-            return Err({ NotFound: `cannot delete the product: product with id=${id} not found` });
-        }
-        return Ok(deletedProductOpt.Some.id);
-    }),
-
-    /*
-        on create order we generate a hashcode of the order and then use this number as corelation id (memo) in the transfer function
-        the memo is later used to identify a payment for this particular order.
-
-        The entire flow is divided into the three main parts:
-            1. Create an order
-            2. Pay for the order (transfer ICP to the seller). 
-            3. Complete the order (use memo from step 1 and the transaction block from step 2)
-            
-        Step 2 is done on the FE app because we cannot create an order and transfer ICP in the scope of the single method. 
-        When we call the `createOrder` method, the ic.caller() would the principal of the identity which initiated this call in the frontend app. 
-        However, if we call `ledger.transfer()` from `createOrder` function, the principal of the original caller won't be passed to the 
-        ledger canister when we make this call. 
-        In this case, when we call `ledger.transfer()` from the `createOrder` method,
-        the caller identity in the `ledger.transfer()` would be the principal of the canister from which we just made this call - in our case it's the marketplace canister.
-        That's we split this flow into three parts.
-    */
-    createOrder: update([text], Result(Order, Message), (id) => {
-        const productOpt = productsStorage.get(id);
-        if ("None" in productOpt) {
-            return Err({ NotFound: `cannot create the order: product=${id} not found` });
-        }
-        const product = productOpt.Some;
-        const order = {
-            productId: product.id,
-            price: product.price,
-            status: { PaymentPending: "PAYMENT_PENDING" },
-            seller: product.seller,
-            paid_at_block: None,
-            memo: generateCorrelationId(id)
-        };
-        pendingOrders.insert(order.memo, order);
-        discardByTimeout(order.memo, ORDER_RESERVATION_PERIOD);
-        return Ok(order);
-    }),
-    completePurchase: update([Principal, text, nat64, nat64, nat64], Result(Order, Message), async (seller, id, price, block, memo) => {
-        const paymentVerified = await verifyPaymentInternal(seller, price, block, memo);
-        if (!paymentVerified) {
-            return Err({ NotFound: `cannot complete the purchase: cannot verify the payment, memo=${memo}` });
-        }
-        const pendingOrderOpt = pendingOrders.remove(memo);
-        if ("None" in pendingOrderOpt) {
-            return Err({ NotFound: `cannot complete the purchase: there is no pending order with id=${id}` });
-        }
-        const order = pendingOrderOpt.Some;
-        const updatedOrder = { ...order, status: { Completed: "COMPLETED" }, paid_at_block: Some(block) };
-        const productOpt = productsStorage.get(id);
-        if ("None" in productOpt) {
-            throw Error(`product with id=${id} not found`);
-        }
-        const product = productOpt.Some;
-        product.soldAmount += 1n;
-        productsStorage.insert(product.id, product);
-        persistedOrders.insert(ic.caller(), updatedOrder);
-        return Ok(updatedOrder);
-    }),
-
-    /*
-        another example of a canister-to-canister communication
-        here we call the `query_blocks` function on the ledger canister
-        to get a single block with the given number `start`.
-        The `length` parameter is set to 1 to limit the return amount of blocks.
-        In this function we verify all the details about the transaction to make sure that we can mark the order as completed
-    */
-    verifyPayment: query([Principal, nat64, nat64, nat64], bool, async (receiver, amount, block, memo) => {
-        return await verifyPaymentInternal(receiver, amount, block, memo);
-    }),
-
-    /*
+  getAccount: query([], Result(AccountData, Message), () => {
+    const caller = ic.caller();
+    const accountOpt = accountsStorage.get(caller);
+    if ("None" in accountOpt) {
+      return Err({ NotFound: `Account with id=${caller} not found` });
+    }
+    return Ok(accountOpt.Some);
+  }),
+  isRegistered: query([Principal], bool, (user) => {
+    return accountsStorage.containsKey(user);
+  }),
+  getRequest: query([text], Result(Request, Message), (requestId) => {
+    const requestOpt = requestsStorage.get(requestId);
+    if ("None" in requestOpt) {
+      return Err({ NotFound: `Request with id=${requestId} not found` });
+    }
+    return Ok(requestOpt.Some);
+  }),
+  /*
         a helper function to get address from the principal
         the address is later used in the transfer method
     */
-    getAddressFromPrincipal: query([Principal], text, (principal) => {
-        return hexAddressFromPrincipal(principal, 0);
-    }),
-
-    // not used right now. can be used for transfers from the canister for instances when a marketplace can hold a balance account for users
-    makePayment: update([text, nat64], Result(Message, Message), async (to, amount) => {
-        const toPrincipal = Principal.fromText(to);
-        const toAddress = hexAddressFromPrincipal(toPrincipal, 0);
-        const transferFeeResponse = await ic.call(icpCanister.transfer_fee, { args: [{}] });
-        const transferResult = ic.call(icpCanister.transfer, {
-            args: [{
-                memo: 0n,
-                amount: {
-                    e8s: amount
-                },
-                fee: {
-                    e8s: transferFeeResponse.transfer_fee.e8s
-                },
-                from_subaccount: None,
-                to: binaryAddressFromAddress(toAddress),
-                created_at_time: None
-            }]
-        });
-        if ("Err" in transferResult) {
-            return Err({ PaymentFailed: `payment failed, err=${transferResult.Err}` })
-        }
-        return Ok({ PaymentCompleted: "payment completed" });
-    })
-});
-
-/*
-    a hash function that is used to generate correlation ids for orders.
-    also, we use that in the verifyPayment function where we check if the used has actually paid the order
-*/
-function hash(input: any): nat64 {
-    return BigInt(Math.abs(hashCode().value(input)));
-};
-
-// a workaround to make uuid package work with Azle
-globalThis.crypto = {
-    // @ts-ignore
-    getRandomValues: () => {
-        let array = new Uint8Array(32);
-
-        for (let i = 0; i < array.length; i++) {
-            array[i] = Math.floor(Math.random() * 256);
-        }
-
-        return array;
+  getAddressFromPrincipal: query([Principal], text, (principal) => {
+    return hexAddressFromPrincipal(principal, 0);
+  }),
+  getCanisterId: query([], Principal, () => {
+    return ic.id();
+  }),
+  createAccount: update([], Result(AccountData, Message), () => {
+    const caller = ic.caller();
+    if (accountsStorage.containsKey(caller)) {
+      return Err({ AlreadyRegistered: `${caller} already has an account.` });
     }
-};
+    const account = {
+      owner: caller,
+      transactions: [],
+      transferRequests: [],
+    };
+    accountsStorage.insert(caller, account);
+    return Ok(account);
+  }),
+  createTransferRequest: update(
+    [RequestPayload],
+    Result(Request, Message),
+    (payload) => {
+      if (typeof payload !== "object" || Object.keys(payload).length === 0) {
+        return Err({ NotFound: "Invalid payload." });
+      }
+      const caller = ic.caller();
+      const accountRequesterOpt = accountsStorage.get(caller);
+      if ("None" in accountRequesterOpt) {
+        return Err({ NotFound: `Account with id=${caller} not found` });
+      }
+      const accountReceiverOpt = accountsStorage.get(payload.receiver);
+      if ("None" in accountReceiverOpt) {
+        return Err({
+          NotFound: `Account with id=${payload.receiver} not found`,
+        });
+      }
+      const request = {
+        id: uuidv4(),
+        requester: caller,
+        paid: false,
+        transactionId: None,
+        approved: None,
+        ...payload,
+      };
+      const updatedRequesterAccount = {
+        ...accountRequesterOpt.Some,
+        transferRequests: [
+          ...accountRequesterOpt.Some.transferRequests,
+          request.id,
+        ],
+      };
+      const updatedReceiverAccount = {
+        ...accountReceiverOpt.Some,
+        transferRequests: [
+          ...accountReceiverOpt.Some.transferRequests,
+          request.id,
+        ],
+      };
+      accountsStorage.insert(caller, updatedRequesterAccount);
+      accountsStorage.insert(payload.receiver, updatedReceiverAccount);
+      requestsStorage.insert(request.id, request);
+      discardByTimeout(request.id,REQUEST_VALIDITY_PERIOD)
+      return Ok(request);
+    }
+  ),
+  handleTransferRequest: update(
+    [text, bool],
+    Result(Request, Message),
+    async (requestId, canTransfer) => {
+      const requestOpt = requestsStorage.get(requestId);
+      if ("None" in requestOpt) {
+        return Err({ NotFound: `Request with id=${requestId} not found` });
+      }
+      const request = requestOpt.Some;
+      if (request.receiver.toString() != ic.caller().toString()) {
+        return Err({ NotOwner: `Only receiver can approve the request` });
+      }
+      if (request.approved) {
+        return Err({
+          ApproveRequestFailed: `request with id=${requestId} is already approved.`,
+        });
+      }
+      const accountRequesterOpt = accountsStorage.get(request.requester);
+      if ("None" in accountRequesterOpt) {
+        return Err({
+          NotFound: `Account with id=${request.requester} not found`,
+        });
+      }
+      const accountReceiverOpt = accountsStorage.get(request.receiver);
+      if ("None" in accountReceiverOpt) {
+        return Err({
+          NotFound: `Account with id=${request.receiver} not found`,
+        });
+      }
+      if (canTransfer) {
+        try {
+          let transferFromArgs = {
+            spender_subaccount: None,
+            from: { owner: request.receiver, subaccount: None },
+            to: { owner: request.requester, subaccount: None },
+            amount: request.amount,
+            fee: None,
+            memo: None,
+            created_at_time: Some(ic.time()),
+          };
+          const transferFromTx = await handleTransferFrom(transferFromArgs);
 
-function generateCorrelationId(productId: text): nat64 {
-    const correlationId = `${productId}_${ic.caller().toText()}_${ic.time()}`;
-    return hash(correlationId);
-};
+          let transaction = {
+            id: uuidv4(),
+            transactionType: { approvedRequests: "APPROVED_REQUEST" },
+            amount: transferFromArgs.amount,
+            spender: Some(ic.id()),
+            from: Some(request.receiver),
+            to: Some(request.requester),
+          };
+          request.approved = Some(true);
+          request.transactionId = Some(transaction.id);
+          requestsStorage.insert(request.id, request);
+
+          const accountRequester = accountRequesterOpt.Some;
+          const accountReceiver = accountReceiverOpt.Some;
+          accountRequester.transactions.push(transaction);
+          accountReceiver.transactions.push(transaction);
+          accountsStorage.insert(accountRequester.owner, accountRequester);
+          accountsStorage.insert(accountReceiver.owner, accountReceiver);
+          return Ok(request);
+        } catch (e) {
+          return Err({ TransferFromFailed: `${e}` });
+        }
+      } else {
+        request.approved = Some(false);
+        requestsStorage.insert(request.id, request);
+        return Ok(request);
+      }
+    }
+  ),
+  transferFrom: update(
+    [TransferFromArgs],
+    Result(AccountData, Message),
+    async (transferFromArgs) => {
+      const from = transferFromArgs.from.owner;
+      if (from.toString() != ic.caller().toString()) {
+        return Err({
+          NotOwner: `The caller and the from principal needs to be the same.`,
+        });
+      }
+      // maybe try catch and throw/reject
+      const accountOpt = accountsStorage.get(from);
+      if ("None" in accountOpt) {
+        return Err({ NotFound: `Account with id=${from} not found` });
+      }
+      let account = accountOpt.Some;
+      try {
+        const transferFromTx = await handleTransferFrom(transferFromArgs);
+      } catch (e) {
+        return Err({ TransferFromFailed: `${e}` });
+      }
+      let transaction = {
+        id: uuidv4(),
+        transactionType: { transfer: "TRANSFER" },
+        amount: transferFromArgs.amount,
+        spender: Some(ic.caller()),
+        from: Some(transferFromArgs.from.owner),
+        to: Some(transferFromArgs.to.owner),
+      };
+      account.transactions.push(transaction);
+      accountsStorage.insert(from, account);
+
+      if (accountsStorage.containsKey(transferFromArgs.to.owner)) {
+        let toAccount = accountsStorage.get(transferFromArgs.to.owner).Some;
+        toAccount.transactions.push(transaction);
+        accountsStorage.insert(toAccount.owner, toAccount);
+      }
+      return Ok(account);
+    }
+  ),
+});
 
 /*
     after the order is created, we give the `delay` amount of minutes to pay for the order.
     if it's not paid during this timeframe, the order is automatically removed from the pending orders.
 */
-function discardByTimeout(memo: nat64, delay: Duration) {
-    ic.setTimer(delay, () => {
-        const order = pendingOrders.remove(memo);
-        console.log(`Order discarded ${order}`);
-    });
+function discardByTimeout(requestId: text, delay: Duration) {
+  ic.setTimer(delay, () => {
+    const requestOpt = requestsStorage.get(requestId);
+    if ("None" in requestOpt) {
+      return;
+    }
+    const request = requestOpt.Some;
+    // Requests can only be created if both the requester and the receiver has an account
+    // Since there are no mechanism to delete an account, they should always exist
+    const accountRequester = accountsStorage.get(request.requester).Some;
+    const accountReceiver = accountsStorage.get(request.receiver).Some;
+    const requesterTransferIndex = accountRequester.transferRequests.findIndex(
+      (request: typeof Request) => request.id.toString() === requestId
+    );
+    const receiverTransferIndex = accountReceiver.transferRequests.findIndex(
+      (request: typeof Request) => request.id.toString() === requestId
+    );
+    accountReceiver.transferRequests.splice(receiverTransferIndex, 1);
+    accountRequester.transferRequests.splice(requesterTransferIndex, 1);
+
+    accountsStorage.insert(accountRequester.owner, accountRequester);
+    accountsStorage.insert(accountReceiver.owner, accountReceiver);
+    requestsStorage.remove(request.id);
+  });
+}
+
+// a workaround to make uuid package work with Azle
+globalThis.crypto = {
+  // @ts-ignore
+  getRandomValues: () => {
+    let array = new Uint8Array(32);
+
+    for (let i = 0; i < array.length; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+
+    return array;
+  },
 };
 
-async function verifyPaymentInternal(receiver: Principal, amount: nat64, block: nat64, memo: nat64): Promise<bool> {
-    const blockData = await ic.call(icpCanister.query_blocks, { args: [{ start: block, length: 1n }] });
-    const tx = blockData.blocks.find((block) => {
-        if ("None" in block.transaction.operation) {
-            return false;
-        }
-        const operation = block.transaction.operation.Some;
-        const senderAddress = binaryAddressFromPrincipal(ic.caller(), 0);
-        const receiverAddress = binaryAddressFromPrincipal(receiver, 0);
-        return block.transaction.memo === memo &&
-            hash(senderAddress) === hash(operation.Transfer?.from) &&
-            hash(receiverAddress) === hash(operation.Transfer?.to) &&
-            amount === operation.Transfer?.amount.e8s;
-    });
-    return tx ? true : false;
-};
+async function handleGetFee(): Promise<nat> {
+  return await ic.call(icrc.icrc1_fee, {
+    args: [],
+  });
+}
+async function handleGetAllowance(account: Account): Promise<AllowanceResult> {
+  const spender = {
+    owner: ic.id(),
+    subaccount: None,
+  };
+  return await ic.call(icrc.icrc2_allowance, {
+    args: [{ account, spender }],
+  });
+}
+async function handleTransferFrom(
+  transferFromArgs: TransferFromArgs
+): Promise<TransferFromResult> {
+  const allowanceTx = await handleGetAllowance(transferFromArgs.from);
+  const fee = await handleGetFee();
+  if (transferFromArgs.amount + fee > allowanceTx.allowance) {
+    throw "`Allowance is not enough to cover the sum of the transfer amount and the fee.";
+  }
+  return await ic.call(icrc.icrc2_transfer_from, {
+    args: [transferFromArgs],
+  });
+}
