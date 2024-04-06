@@ -53,7 +53,7 @@ const App = function AppWrapper() {
             </Nav.Item>
           </Nav>
           <main>
-            <Bank name={name} getApproveBalance={getApproveBalance} getBalance={getBalance} />
+            <Bank name={name} approveBalance={approveBalance} balance={balance} getApproveBalance={getApproveBalance} getBalance={getBalance} />
           </main>
         </Container>
       ) : (

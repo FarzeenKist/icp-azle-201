@@ -22,7 +22,7 @@ import { approve } from "../../utils/ledger";
 import TransactionTable from "./TransactionTable";
 import RequestsTable from "./RequestsTable";
 
-const Bank = ({ name, getBalance, getApproveBalance }) => {
+const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) => {
   const [loading, setLoading] = useState(false);
   const [account, setAccount] = useState(null);
   const [requests, setRequests] = useState(null);
@@ -103,6 +103,10 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
     try {
       setLoading(true);
       amount = amount * 10 ** 8;
+      if(balance < amount){
+        toast(<NotificationError text="Amount to approve can't exceed current balance." />);
+        return;
+      }
       approve(amount).then((resp) => {
         getAccount();
         getApproveBalance();
@@ -123,6 +127,10 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
   const handleTransferFrom = async ({ to, amount }) => {
     try {
       setLoading(true);
+      if(amount > approveAmount){
+        toast(<NotificationError text="Amount can't exceeds the bank canister's current approved amount." />);
+        return;
+      }
       to = Principal.fromText(to);
       amount = amount * 10 ** 8;
       transferFrom(to, amount).then((resp) => {
@@ -141,6 +149,11 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
   const handleTransferRequest = async ({ requestId, canTransfer }) => {
     try {
       setLoading(true);
+      const request = requests.find(request => request.id == requestId);
+      if(parseInt(request.amount.toString()) > approveAmount){
+        toast(<NotificationError text="Amount can't exceeds the bank canister's current approved amount." />);
+        return;
+      }
       transferRequest(requestId, canTransfer).then((resp) => {
         getAccount();
         getApproveBalance();
