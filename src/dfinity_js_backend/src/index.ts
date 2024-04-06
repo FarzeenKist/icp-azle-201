@@ -96,6 +96,25 @@ export default Canister({
     }
     return Ok(requestOpt.Some);
   }),
+  getCallerRequests: query([], Result(Vec(Request), Message), () => {
+    const caller = ic.caller();
+    const accountOpt = accountsStorage.get(caller);
+    if ("None" in accountOpt) {
+      return Err({ NotFound: `Account with id=${caller} not found` });
+    }
+    const transferRequestsIds = accountOpt.Some.transferRequests;
+    const requestsLength = transferRequestsIds.length;
+    const requests = [];
+    for(let i = 0; i < requestsLength; i++){
+      const requestOpt = requestsStorage.get(transferRequestsIds[i]);
+      if ("None" in requestOpt) {
+        continue;
+      }
+      requests.push(requestOpt.Some)
+    }
+
+    return Ok(requests);
+  }),
   /*
         a helper function to get address from the principal
         the address is later used in the transfer method
@@ -262,7 +281,7 @@ export default Canister({
         id: uuidv4(),
         transactionType: { transfer: "TRANSFER" },
         amount: transferFromArgs.amount,
-        spender: Some(ic.caller()),
+        spender: Some(ic.id()),
         from: Some(transferFromArgs.from.owner),
         to: Some(transferFromArgs.to.owner),
       };

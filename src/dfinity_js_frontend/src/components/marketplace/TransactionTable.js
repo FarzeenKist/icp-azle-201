@@ -1,4 +1,6 @@
 import Table from "react-bootstrap/Table";
+import React from "react";
+import { Modal, Button } from "react-bootstrap";
 
 function TransactionTable({ transactions, onHide, show }) {
   return (
@@ -8,6 +10,7 @@ function TransactionTable({ transactions, onHide, show }) {
       size="lg"
       aria-labelledby="contained-modal-title-vcenter"
       centered
+      className="px-5"
     >
       <Modal.Header closeButton>
         <Modal.Title id="contained-modal-title-vcenter">
@@ -27,16 +30,16 @@ function TransactionTable({ transactions, onHide, show }) {
             </tr>
           </thead>
           <tbody>
-            {transactions.map((transaction) => {
-              <tr>
+            {transactions.map((transaction, index) => (
+              <tr key={`${transaction}-${index}`}>
                 <td>{transaction.id}</td>
-                <td>{transaction.transactionType}</td>
-                <td>{transaction.from}</td>
-                <td>{transaction.to}</td>
-                <td>{transaction.spender}</td>
-                <td>{transaction.amount}</td>
-              </tr>;
-            })}
+                <td>{transaction.transactionType[Object.keys(transaction.transactionType)[0]]}</td>
+                <td>{transaction.from.toString()}</td>
+                <td>{transaction.to.toString()}</td>
+                <td>{transaction.spender.toString()}</td>
+                <td>{transaction.amount.toString()}</td>
+              </tr>
+            ))}
           </tbody>
         </Table>
       </Modal.Body>

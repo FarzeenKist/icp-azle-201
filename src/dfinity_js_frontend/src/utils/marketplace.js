@@ -66,33 +66,19 @@ export async function getAccount() {
     return [];
   }
 }
-
-export const getCallerRequests = async(requestIds) => {
-  const requests = [];
-		const requestsLength = requestIds.length;
-		for (let i = 0; i < requestsLength; i++) {
-			const request = new Promise(async (resolve) => {
-				const res = await getRequest(requestIds[i]);
-				console.log(res)
-        if (res.Ok){
-          const request = res.Ok
-          resolve({
-            id: request.id,
-            requester: request.requester,
-            receiver: request.receiver,
-            amount: request.amount,
-            approved: request.approved,
-            transactionId: request.transactionId,
-          });
-        }else{
-          const error = {
-            id: requestIds[i],
-            message: `Request with id=${requestIds[i]} not found.`
-          }
-          reject(error)
-        }
-			});
-			requests.push(request);
-		}
-		return Promise.all(requests);
+export async function getCallerRequests() {
+  try {
+    let result = await window.canister.bank.getCallerRequests();
+    if(result.Err){
+      return;
+    }else{
+      return result.Ok;
+    }
+  } catch (err) {
+    if (err.name === "AgentHTTPResponseError") {
+      const authClient = window.auth.client;
+      await authClient.logout();
+    }
+    return [];
+  }
 }

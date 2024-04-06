@@ -8,6 +8,7 @@ import Transfer from "./Transfer";
 import Approve from "./Approve";
 import { Principal } from "@dfinity/principal";
 import { NotificationSuccess, NotificationError } from "../utils/Notifications";
+import HandleTransfer from "./HandleTransfer";
 import {
   createTransferRequest,
   getCallerRequests,
@@ -24,14 +25,27 @@ import RequestsTable from "./RequestsTable";
 const Bank = ({ name, getBalance, getApproveBalance }) => {
   const [loading, setLoading] = useState(false);
   const [account, setAccount] = useState(null);
-  const [requests, setRequests] = useState([]);
+  const [requests, setRequests] = useState(null);
   const [registered, setRegistered] = useState(null);
 
+  // Modals state
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showAddRequest, setShowAddRequest] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showTransferRequests, setShowTransferRequests] = useState(false);
+  const [showHandleTransfer, setShowHandleTransfer] = useState(false);
+
+  const getRequests = useCallback(async () => {
+    try {
+      setLoading(true)
+      setRequests(await getCallerRequests());
+    } catch (error) {
+      console.log({ error });
+    }finally{
+      setLoading(false)
+    }
+  });
 
   const getAccount = useCallback(async () => {
     try {
@@ -42,13 +56,7 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
   });
   const getRegistered = useCallback(async () => {
     try {
-    } catch (error) {
-      console.log({ error });
-    }
-  });
-  const getRequests = useCallback(async () => {
-    try {
-      setRequests(await getCallerRequests(account.transferRequests));
+      setRegistered(await fetchIsRegistered());
     } catch (error) {
       console.log({ error });
     }
@@ -61,6 +69,7 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
       data.amount = data.amount * 10 ** 8;
       createTransferRequest(data).then((resp) => {
         getAccount();
+        getRequests()
       });
       toast(
         <NotificationSuccess text="Transfer request added successfully." />
@@ -149,18 +158,20 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
   };
 
   useEffect(() => {
+    getRegistered();
+  }, [getRegistered]);
+  useEffect(() => {
     if (registered) {
       getAccount();
     }
   }, [registered]);
+
   useEffect(() => {
-    getRegistered();
-  }, [getRegistered]);
-  useEffect(() => {
-    if (registered && account) {
+    if(account && account.transferRequests.length){
       getRequests();
     }
-  }, [getRequests]);
+
+  }, [account]);
 
   return (
     <>
@@ -194,22 +205,42 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
                     Approve Bank Canister
                   </Button>
                 </Col>
-                <Col>
-                  <Button
-                    variant="primary"
-                    onClick={() => setShowTransactionModal(true)}
-                  >
-                    Show Transaction History
-                  </Button>
-                </Col>
-                <Col>
-                  <Button
-                    variant="primary"
-                    onClick={() => setShowTransferRequests(true)}
-                  >
-                    Show Transfer Requests
-                  </Button>
-                </Col>
+                {account && account.transactions.length ? (
+                  <Col>
+                    <Button
+                      variant="primary"
+                      onClick={() => setShowTransactionModal(true)}
+                    >
+                      Show Transaction History
+                    </Button>
+                  </Col>
+                ) : (
+                  ""
+                )}
+                {account && account.transferRequests.length ? (
+                  <Col>
+                    <Button
+                      variant="primary"
+                      onClick={() => setShowTransferRequests(true)}
+                    >
+                      Show Transfer Requests
+                    </Button>
+                  </Col>
+                ) : (
+                  ""
+                )}
+                {account && account.transferRequests.length ? (
+                  <Col>
+                    <Button
+                      variant="primary"
+                      onClick={() => setShowHandleTransfer(true)}
+                    >
+                      Handle Transfer
+                    </Button>
+                  </Col>
+                ) : (
+                  ""
+                )}
               </Row>
 
               <AddRequest
@@ -227,17 +258,26 @@ const Bank = ({ name, getBalance, getApproveBalance }) => {
                 show={showApproveModal}
                 onHide={() => setShowApproveModal(false)}
               />
-              <TransactionTable
-                transactions={account.transactions}
-                show={showTransactionModal}
-                onHide={() => setShowTransactionModal(false)}
-              />
-              <RequestsTable
-                handleTransferRequest={handleTransferRequest}
-                requests={requests}
-                show={showTransferRequests}
-                onHide={() => setShowTransferRequests(false)}
-              />
+              {account && account.transactions.length ? (
+                <TransactionTable
+                  transactions={account.transactions}
+                  show={showTransactionModal}
+                  onHide={() => setShowTransactionModal(false)}
+                />
+              ) : (
+                ""
+              )}
+
+              {showTransferRequests? (
+                <RequestsTable
+                  show={showTransferRequests}
+                  onHide={() => setShowTransferRequests(false)}
+                  requests={requests}
+                />
+              ) : (
+                ""
+              )}
+              {showHandleTransfer? (<HandleTransfer handleTransferRequest={handleTransferRequest} show={setShowHandleTransfer} onHide={() => setShowHandleTransfer(false)} />) : ""}
             </Container>
           </>
         ) : (

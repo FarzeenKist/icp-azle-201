@@ -25,7 +25,6 @@ const App = function AppWrapper() {
   const getApproveBalance = useCallback(async () => {
     if (isAuthenticated) {
       setApproveBalance(await getBankAllowance());
-      console.log(approveBalance)
     }
   });
 
