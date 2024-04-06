@@ -181,7 +181,7 @@ export default Canister({
       accountsStorage.insert(caller, updatedRequesterAccount);
       accountsStorage.insert(payload.receiver, updatedReceiverAccount);
       requestsStorage.insert(request.id, request);
-      discardByTimeout(request.id,REQUEST_VALIDITY_PERIOD)
+      // discardByTimeout(request.id,REQUEST_VALIDITY_PERIOD)
       return Ok(request);
     }
   ),
@@ -197,7 +197,7 @@ export default Canister({
       if (request.receiver.toString() != ic.caller().toString()) {
         return Err({ NotOwner: `Only receiver can approve the request` });
       }
-      if (request.approved) {
+      if (request.approved.Some) {
         return Err({
           ApproveRequestFailed: `request with id=${requestId} is already approved.`,
         });

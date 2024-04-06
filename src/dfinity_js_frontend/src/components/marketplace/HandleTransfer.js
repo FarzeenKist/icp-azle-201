@@ -29,9 +29,9 @@ export default function HandleTransfer({handleTransferRequest, show , onHide}) {
       </Form.Group>
       <Form.Group className="mb-3" controlId="canTransfer">
         <Form.Label>canTransfer</Form.Label>
-        <Form.Select onChange={(e) => setCanTransfer(e.target.value === "true" ? true: false)}>
+        <Form.Select defaultValue={"false"} onChange={(e) => setCanTransfer(e.target.value === "true" ? true: false)}>
           <option value="true">Yes</option>
-          <option value="false" selected>
+          <option value="false">
             No
           </option>
         </Form.Select>
@@ -41,7 +41,7 @@ export default function HandleTransfer({handleTransferRequest, show , onHide}) {
         type="button"
         disabled={!requestId.trim()}
         onClick={() => {
-          handleTransferRequest(requestId, canTransfer);
+          handleTransferRequest({requestId, canTransfer});
         }}
       >
         Handle Request

@@ -22,11 +22,19 @@ import { approve } from "../../utils/ledger";
 import TransactionTable from "./TransactionTable";
 import RequestsTable from "./RequestsTable";
 
-const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) => {
+const Bank = ({
+  name,
+  getBalance,
+  balance,
+  getApproveBalance,
+  approveBalance,
+}) => {
   const [loading, setLoading] = useState(false);
   const [account, setAccount] = useState(null);
   const [requests, setRequests] = useState(null);
   const [registered, setRegistered] = useState(null);
+
+  const FEE = parseInt(10000n.toString());
 
   // Modals state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -38,12 +46,13 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
 
   const getRequests = useCallback(async () => {
     try {
-      setLoading(true)
+      setLoading(true);
       setRequests(await getCallerRequests());
     } catch (error) {
       console.log({ error });
-    }finally{
-      setLoading(false)
+    } finally {
+      setLoading(false);
+      console.log(requests)
     }
   });
 
@@ -67,9 +76,15 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
       setLoading(true);
       data.receiver = Principal.fromText(data.receiver);
       data.amount = data.amount * 10 ** 8;
+      if (data.receiver.toString() == window.auth.principal.toString()) {
+        toast(
+          <NotificationError text="You can't transfer tokens to yourself." />
+        );
+        return;
+      }
       createTransferRequest(data).then((resp) => {
         getAccount();
-        getRequests()
+        getRequests();
       });
       toast(
         <NotificationSuccess text="Transfer request added successfully." />
@@ -102,9 +117,12 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
   const approveAmount = async (amount) => {
     try {
       setLoading(true);
+      let rawBalance = parseInt(balance) * 10 ** 8;
       amount = amount * 10 ** 8;
-      if(balance < amount){
-        toast(<NotificationError text="Amount to approve can't exceed current balance." />);
+      if (rawBalance < amount) {
+        toast(
+          <NotificationError text="Amount to approve can't exceed current balance." />
+        );
         return;
       }
       approve(amount).then((resp) => {
@@ -127,12 +145,23 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
   const handleTransferFrom = async ({ to, amount }) => {
     try {
       setLoading(true);
-      if(amount > approveAmount){
-        toast(<NotificationError text="Amount can't exceeds the bank canister's current approved amount." />);
-        return;
-      }
       to = Principal.fromText(to);
       amount = amount * 10 ** 8;
+      if (to.toString() == window.auth.principal.toString()) {
+        toast(
+          <NotificationError text="You can't transfer tokens to yourself." />
+        );
+        return;
+      }
+      let rawApproveBalance = parseInt(approveBalance) * 10 ** 8 || 0;
+      // add fees to get total cost of transfer
+      // must not exceed allowance
+      if (amount + FEE > rawApproveBalance) {
+        toast(
+          <NotificationError text="Amount can't exceeds the bank canister's current approved amount." />
+        );
+        return;
+      }
       transferFrom(to, amount).then((resp) => {
         getAccount();
         getApproveBalance();
@@ -149,10 +178,19 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
   const handleTransferRequest = async ({ requestId, canTransfer }) => {
     try {
       setLoading(true);
-      const request = requests.find(request => request.id == requestId);
-      if(parseInt(request.amount.toString()) > approveAmount){
-        toast(<NotificationError text="Amount can't exceeds the bank canister's current approved amount." />);
-        return;
+      if(canTransfer){
+        const request = requests.flat().find((request) => {
+          return request.id == requestId
+        });
+        let rawApproveBalance = parseInt(approveBalance) * 10 ** 8 || 0;
+        // add fees to get total cost of transfer
+        // must not exceed allowance
+        if (parseInt(request.amount.toString()) + FEE > rawApproveBalance) {
+          toast(
+            <NotificationError text="Amount can't exceeds the bank canister's current approved amount." />
+          );
+          return;
+        }
       }
       transferRequest(requestId, canTransfer).then((resp) => {
         getAccount();
@@ -180,10 +218,9 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
   }, [registered]);
 
   useEffect(() => {
-    if(account && account.transferRequests.length){
+    if (account && account.transferRequests.length) {
       getRequests();
     }
-
   }, [account]);
 
   return (
@@ -281,7 +318,7 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
                 ""
               )}
 
-              {showTransferRequests? (
+              {showTransferRequests ? (
                 <RequestsTable
                   show={showTransferRequests}
                   onHide={() => setShowTransferRequests(false)}
@@ -290,7 +327,15 @@ const Bank = ({ name, getBalance, balance, getApproveBalance, approveBalance }) 
               ) : (
                 ""
               )}
-              {showHandleTransfer? (<HandleTransfer handleTransferRequest={handleTransferRequest} show={setShowHandleTransfer} onHide={() => setShowHandleTransfer(false)} />) : ""}
+              {showHandleTransfer ? (
+                <HandleTransfer
+                  handleTransferRequest={handleTransferRequest}
+                  show={setShowHandleTransfer}
+                  onHide={() => setShowHandleTransfer(false)}
+                />
+              ) : (
+                ""
+              )}
             </Container>
           </>
         ) : (
