@@ -65,7 +65,7 @@ const Bank = ({
   });
   const getRegistered = useCallback(async () => {
     try {
-      setRegistered(await fetchIsRegistered());
+      setRegistered(await fetchIsRegistered(window.auth.principal));
     } catch (error) {
       console.log({ error });
     }
@@ -79,6 +79,13 @@ const Bank = ({
       if (data.receiver.toString() == window.auth.principal.toString()) {
         toast(
           <NotificationError text="You can't transfer tokens to yourself." />
+        );
+        return;
+      }
+      let isReceiverRegistered = await fetchIsRegistered(data.receiver)
+      if (!isReceiverRegistered) {
+        toast(
+          <NotificationError text="Receiver needs to be registered." />
         );
         return;
       }
@@ -178,10 +185,22 @@ const Bank = ({
   const handleTransferRequest = async ({ requestId, canTransfer }) => {
     try {
       setLoading(true);
+      const request = requests.flat().find((request) => {
+        return request.id == requestId
+      });
+      if (request.approved.length && request.approved[0]) {
+        toast(
+          <NotificationError text="Request has already been handled." />
+        );
+        return;
+      }
+      if (window.auth.principalText != request.receiver.toText()) {
+        toast(
+          <NotificationError text="Only receiver can handle a request." />
+        );
+        return;
+      }
       if(canTransfer){
-        const request = requests.flat().find((request) => {
-          return request.id == requestId
-        });
         let rawApproveBalance = parseInt(approveBalance) * 10 ** 8 || 0;
         // add fees to get total cost of transfer
         // must not exceed allowance

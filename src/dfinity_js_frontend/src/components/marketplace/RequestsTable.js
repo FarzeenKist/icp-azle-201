@@ -38,7 +38,7 @@ function RequestsTable({ requests, onHide, show }) {
                   <td>{request.requester.toText()}</td>
                   <td>{request.receiver.toText()}</td>
                   <td>
-                    {request.approved.length ? request.approved : "-------"}
+                    {request.approved.length ? request.approved[0] ? "Yes" : "No" : "-------"}
                   </td>
                   <td>{request.amount.toString()}</td>
                   <td>

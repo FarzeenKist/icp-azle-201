@@ -39,9 +39,9 @@ async function getRequest(requestId) {
     return [];
   }
 }
-export async function isRegistered() {
+export async function isRegistered(principal) {
   try {
-    return await window.canister.bank.isRegistered(window.auth.principal);
+    return await window.canister.bank.isRegistered(principal);
   } catch (err) {
     if (err.name === "AgentHTTPResponseError") {
       const authClient = window.auth.client;
