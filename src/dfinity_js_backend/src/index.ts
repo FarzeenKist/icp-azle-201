@@ -78,6 +78,7 @@ let icrc: typeof ICRC = ICRC(Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
 const REQUEST_VALIDITY_PERIOD = 120n; // in seconds
 
 export default Canister({
+  // This function is used to fetch the account data of the caller.
   getAccount: query([], Result(AccountData, Message), () => {
     const caller = ic.caller();
     const accountOpt = accountsStorage.get(caller);
@@ -86,6 +87,7 @@ export default Canister({
     }
     return Ok(accountOpt.Some);
   }),
+  // This function is used to verify whether a Principal has an account.
   isRegistered: query([Principal], bool, (user) => {
     return accountsStorage.containsKey(user);
   }),
@@ -96,6 +98,7 @@ export default Canister({
     }
     return Ok(requestOpt.Some);
   }),
+  // This function is used to fetch all the requests of the caller.
   getCallerRequests: query([], Result(Vec(Request), Message), () => {
     const caller = ic.caller();
     const accountOpt = accountsStorage.get(caller);
@@ -122,9 +125,11 @@ export default Canister({
   getAddressFromPrincipal: query([Principal], text, (principal) => {
     return hexAddressFromPrincipal(principal, 0);
   }),
+  // This function is used to fetch the id of the canister
   getCanisterId: query([], Principal, () => {
     return ic.id();
   }),
+  // This function allows the caller to create an account only if the later doesn't already have one.
   createAccount: update([], Result(AccountData, Message), () => {
     const caller = ic.caller();
     if (accountsStorage.containsKey(caller)) {
@@ -138,6 +143,8 @@ export default Canister({
     accountsStorage.insert(caller, account);
     return Ok(account);
   }),
+  // This function allows the caller to create a transfer request to another user. 
+  // It is required for both the requester and receiver of a request to have an account.
   createTransferRequest: update(
     [RequestPayload],
     Result(Request, Message),
@@ -185,6 +192,9 @@ export default Canister({
       return Ok(request);
     }
   ),
+  // This function allows the receiver of a transfer request to handle a transfer request.
+  // They can either reject or approve the request.
+  // If approved, the amount is transferred to the requester and a transaction is stored for both.
   handleTransferRequest: update(
     [text, bool],
     Result(Request, Message),
@@ -256,6 +266,8 @@ export default Canister({
       }
     }
   ),
+  // This function allows the caller to transfer tokens to a Principal.
+  // Only the caller is required to have an account.
   transferFrom: update(
     [TransferFromArgs],
     Result(AccountData, Message),
@@ -342,11 +354,13 @@ globalThis.crypto = {
   },
 };
 
+// This function fetches the current fee of the ledger canister.
 async function handleGetFee(): Promise<nat> {
   return await ic.call(icrc.icrc1_fee, {
     args: [],
   });
 }
+// This function fetches the current allowance of the backend/bank canister for the `account`.
 async function handleGetAllowance(account: Account): Promise<AllowanceResult> {
   const spender = {
     owner: ic.id(),
@@ -356,6 +370,7 @@ async function handleGetAllowance(account: Account): Promise<AllowanceResult> {
     args: [{ account, spender }],
   });
 }
+// This function carries out the transferFrom operation which is used across the handleTransferRequest and transferFrom functions of the bank/backend canister.
 async function handleTransferFrom(
   transferFromArgs: TransferFromArgs
 ): Promise<TransferFromResult> {

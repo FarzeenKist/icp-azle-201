@@ -23,7 +23,6 @@ This function allows the caller to transfer tokens to a Principal. Only the call
 This function fetches the current fee of the ledger canister.
 ### handleGetAllowance Function
 This function fetches the current allowance of the backend/bank canister for the `account`.
-This function fetches the current fee of the ledger canister.
 ### handleTransferFrom Function
 This function carries out the transferFrom operation which is used across the handleTransferRequest and transferFrom functions of the bank/backend canister.
 
@@ -41,6 +40,9 @@ dfx start --background --clean
 
 # Deploy Internet Identity
 dfx deploy internet_identity
+
+# Generate types declarations
+dfx generate dfinity_js_backend
 
 # Deploy Bank Canister
 dfx deploy dfinity_js_backend

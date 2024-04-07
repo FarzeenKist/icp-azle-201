@@ -188,6 +188,12 @@ const Bank = ({
       const request = requests.flat().find((request) => {
         return request.id == requestId
       });
+      if (!request) {
+        toast(
+          <NotificationError text="Request with the specified ID not found." />
+        );
+        return;
+      }
       if (request.approved.length && request.approved[0]) {
         toast(
           <NotificationError text="Request has already been handled." />
